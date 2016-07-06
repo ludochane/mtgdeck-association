@@ -3,7 +3,7 @@ package fr.lcwi.mtgdeckassociation.main
 import org.apache.spark.SparkContext
 import org.apache.spark.mllib.fpm.{FPGrowth, FPGrowthModel}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{DataFrame, Row, SQLContext}
+import org.apache.spark.sql.{DataFrame, SQLContext}
 
 /**
   * Main class.
@@ -55,38 +55,47 @@ object MtgAssociationApp extends App {
     * @return
     */
   protected[main] def go(cmdOptions: CmdOptions, sc: SparkContext): Unit = {
-    val sqlContext = new SQLContext(sc)
+    val lands: Seq[String] = Seq("Swamp", "Plains", "Forest", "Island", "Mountain", "Smoldering Marsh", "Shambling Vent",
+      "Wooded Foothills", "Canopy Vista", "Flooded Strand", "Polluted Delta", "Sunken Hollow", "Windswept Heath",
+      "Prairie Stream", "Evolving Wilds", "Llanowar Wastes", "Cinder Glade", "Bloodstained Mire", "Fortified Village",
+      "Port Town", "Wastes", "Caves of Koilos")
 
+    val sqlContext = new SQLContext(sc)
     //val data: RDD[String] = sc.textFile("src/main/resources/data/recipes.txt")
-    val decksDF: DataFrame = sqlContext.read.json("src/main/resources/data/decks.json")
+    val decksDF: DataFrame = sqlContext.read.json("src/main/resources/data/decks2.json")
     val cardsDF = decksDF.select("maincards.name")
-    val cards: RDD[Array[String]] = cardsDF.rdd.map(row => row.getSeq[String](0).distinct.toArray)
+
+    val cards: RDD[Array[String]] = cardsDF.rdd.map(row => {
+      row.getSeq[String](0).distinct.diff(lands).toArray
+    }
+
+    )
     cards.cache()
 
     //cards.collect().foreach(cardNames => println(cardNames.mkString(";")))
 
     val fpg = new FPGrowth()
-      .setMinSupport(0.2)
-      //.setNumPartitions(10)
+      .setMinSupport(0.1)
+    //  .setNumPartitions(10)
     val model: FPGrowthModel[String] = fpg.run(cards)
 
-    model.freqItemsets.collect().foreach { itemset =>
-      println(itemset.items.mkString("[", ",", "]") + ", " + itemset.freq)
-    }
-//
-//    println("##################")
+//    model.freqItemsets.collect().foreach { itemset =>
+//      println(itemset.items.mkString("[", ",", "]") + ", " + itemset.freq)
+//    }
 
+//    println("##################")
+//
 //    val fPGrowthModelWith1Antecedent: FPGrowthModel[String] = new FPGrowthModel[String](
 //      model.freqItemsets.filter(_.items.length == 2)
 //    )
-//
-//    val minConfidence = 0.8
-//    fPGrowthModelWith1Antecedent.generateAssociationRules(minConfidence).collect().foreach { rule =>
-//      println(
-//        rule.antecedent.mkString("[", ",", "]")
-//          + " => " + rule.consequent.mkString("[", ",", "]")
-//          + ", " + rule.confidence)
-//    }
+
+    val minConfidence = 0.5
+    model.generateAssociationRules(minConfidence).collect().filter(_.antecedent.length == 1).foreach { rule =>
+      println(
+        rule.antecedent.mkString("[", ",", "]")
+          + " => " + rule.consequent.mkString("[", ",", "]")
+          + ", " + rule.confidence)
+    }
   }
 
 }
